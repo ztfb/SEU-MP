@@ -1,0 +1,377 @@
+<template>
+  <!--为地图创建容器-->
+  <div id="container" style="width: 100%; height: 100%"></div>
+</template>
+<script
+  charset="utf-8"
+  src="https://map.qq.com/api/gljs?v=1.exp&key=RTDBZ-L4NLF-PBVJV-NQUIX-UCDMZ-Z6BH7"
+></script>
+<script>
+export default {
+  name: "TencentMap",
+  data() {
+    return {
+      pointURL: require('@/assets/img/point.svg'),
+      // 地图对象
+      map: null,
+      // 点标记管理器
+      markerLayer: null,
+      // 折线管理器
+      polylineLayer: null,
+      // 信息窗体
+      infoWindow: null,
+      // 所有的信息窗体
+      infoWindows: [],
+      // 所有的折线对象
+      // 进入界面时初始化所有的折线对象，但是并不一次性加入到折线管理器中，而是根据用户的选择进行动态的增改
+      paths: [],
+      // 巡检路线的信息窗
+      pathInfoWindow: null,
+    };
+  },
+  mounted() {
+    this.initMap();
+  },
+  methods: {
+    // 开启点击展示事件
+    open: function () {
+      this.map.on("click", this.clickHandler);
+    },
+    // 关闭点击展示事件
+    close: function () {
+      this.map.off("click", this.clickHandler);
+    },
+    // 展示巡检路线
+    showAllPath: function () {
+      for (let i = 0; i < this.paths.length; i++) {
+        this.polylineLayer.add(this.paths[i]);
+      }
+    },
+    // 不展示巡检路线
+    showNoPath: function () {
+      for (let i = 0; i < this.paths.length; i++) {
+        this.polylineLayer.remove(this.paths[i].id);
+      }
+    },
+    // 根据查询结果展示所有符合条件的点
+    show: function (fps) {
+      // 获取原来的点数据
+      let points = this.markerLayer.getGeometries();
+      //先把所有信息窗体关闭
+      for (let i = 0; i < points.length; i++) this.infoWindows[i].close();
+      for (let i = 0; i < points.length; i++) {
+        for (let j = 0; j < fps.length; j++) {
+          if (points[i].id === fps[j].id) {
+            // 展示信息窗体
+            this.infoWindows[i].open();
+          }
+        }
+      }
+    },
+    // 父组件传入需要显示的路线名数组，让子组件显示
+    showPath: function (ids) {
+      // 清空原有路线
+      for (let i = 0; i < this.paths.length; i++) {
+        this.polylineLayer.remove(this.paths[i].id);
+      }
+      for (let i = 0; i < this.paths.length; i++) {
+        for (let j = 0; j < ids.length; j++) {
+          if (this.paths[i].id === ids[j]) {
+            this.polylineLayer.add(this.paths[i]);
+          }
+        }
+      }
+    },
+    // 根据路线名称打开对应的信息窗体
+    openInfoWindow: function (routeName) {
+      let route = null;
+      for (let i = 0; i < this.paths.length; i++) {
+        if (this.paths[i].id === routeName) route = this.paths[i];
+      }
+      this.pathInfoWindow.open();
+      this.pathInfoWindow.setPosition(
+        new TMap.LatLng(route.paths[0].lat, route.paths[0].lng)
+      );
+      this.pathInfoWindow.setContent(route.id);
+    },
+    //定义事件处理方法
+    pclickHandler: function (evt) {
+      // 点击一个已有的点
+      let point = {
+        id: evt.geometry.id,
+        latitude: evt.geometry.position.lat,
+        longitude: evt.geometry.position.lng,
+        type: evt.geometry.properties.type,
+        number: evt.geometry.properties.number,
+        area: evt.geometry.properties.area,
+        AbnormalNum: evt.geometry.properties.abnormalNumber,
+        isWork: evt.geometry.properties.state === "0" ? true : false,
+      };
+      this.$emit("change", point); // 巡检点管理窗口
+      this.$emit("change2", point); // 巡检路线管理窗口
+    },
+    clickHandler: function (evt) {
+      // 在屏幕上显示效果
+      this.markerLayer.remove(["0"]); // 删除id为0的点
+      let lat = evt.latLng.getLat().toFixed(6);
+      let lng = evt.latLng.getLng().toFixed(6);
+      this.markerLayer.add([
+        {
+          id: "0", //id为零的点为临时电
+          styleId: "myStyle2", //指定样式id
+          position: new TMap.LatLng(lat, lng), //点标记坐标位置
+        },
+      ]);
+      // 返回经纬度信息
+      let position = {
+        latitude: lat,
+        longitude: lng,
+      };
+      this.$emit("changePosition", position);
+    },
+    initMap: function () {
+      // 定义地图中心点坐标
+      let center = new TMap.LatLng(31.887627, 118.819201);
+      // 定义map变量，调用 TMap.Map() 构造函数创建地图
+      let map = new TMap.Map(document.getElementById("container"), {
+        center: center, // 设置地图中心点坐标
+        zoom: 18, // 设置地图缩放级别
+        viewMode: "2D", // 设置2D地图
+        mapStyleId: "style3", // 设置地图样式
+        baseMap: {
+          type: "vector",
+        },
+      });
+      // 创建并初始化MultiMarker
+      let markerLayer = new TMap.MultiMarker({
+        map: map, //指定地图容器
+        //样式定义
+        styles: {
+          //创建一个styleId为"myStyle"的样式（styles的子属性名即为styleId）
+          // 普通样式
+          myStyle1: new TMap.MarkerStyle({
+            width: 30, // 点标记样式宽度（像素）
+            height: 30, // 点标记样式高度（像素）
+            src: this.pointURL,
+            //焦点在图片中的像素位置，一般大头针类似形式的图片以针尖位置做为焦点，圆形点以圆心位置为焦点
+            anchor: { x: 15, y: 15 },
+          }),
+          myStyle2: new TMap.MarkerStyle({
+            width: 15, // 点标记样式宽度（像素）
+            height: 15, // 点标记样式高度（像素）
+            src: this.pointURL,
+            //焦点在图片中的像素位置，一般大头针类似形式的图片以针尖位置做为焦点，圆形点以圆心位置为焦点
+            anchor: { x: 7, y: 7 },
+          })
+        },
+        //点标记数据数组
+        geometries: [],
+      });
+      // 创建并初始化ploylineLayer
+      let polylineLayer = new TMap.MultiPolyline({
+        id: "polyline-layer", //图层唯一标识
+        map: map, //设置折线图层显示到哪个地图实例中
+        //折线样式定义
+        styles: {
+          'style_1': new TMap.PolylineStyle({
+            'color': '#ee3f4d', //线填充色
+            'width': 4, //折线宽度
+            'lineCap': 'round',//线端头方式
+          }),
+          'style_2': new TMap.PolylineStyle({
+            'color': '#3777FF', //线填充色
+            'width': 4, //折线宽度
+            'lineCap': 'round',//线端头方式
+          }),
+          'style_3': new TMap.PolylineStyle({
+            'color': '#8b2671', //线填充色
+            'width': 4, //折线宽度
+            'lineCap': 'round',//线端头方式
+          }),
+          'style_4': new TMap.PolylineStyle({
+            'color': '#45b787', //线填充色
+            'width': 4, //折线宽度
+            'lineCap': 'round',//线端头方式
+          }),
+          'style_5': new TMap.PolylineStyle({
+            'color': '#d2d97a', //线填充色
+            'width': 4, //折线宽度
+            'lineCap': 'round',//线端头方式
+          }),
+          'style_6': new TMap.PolylineStyle({
+            'color': '#e7a23f', //线填充色
+            'width': 4, //折线宽度
+            'lineCap': 'round',//线端头方式
+          }),
+          'style_7': new TMap.PolylineStyle({
+            'color': '#624941', //线填充色
+            'width': 4, //折线宽度
+            'lineCap': 'round',//线端头方式
+          }),
+          'style_8': new TMap.PolylineStyle({
+            'color': '#f4c7ba', //线填充色
+            'width': 4, //折线宽度
+            'lineCap': 'round',//线端头方式
+          }),
+          'style_9': new TMap.PolylineStyle({
+            'color': '#b78d12', //线填充色
+            'width': 4, //折线宽度
+            'lineCap': 'round',//线端头方式
+          }),
+        },
+        //折线数据定义
+        geometries: [],
+      });
+      // 根据后端传过的数据初始化markerLayer
+      let infoWindows = [];
+      // 获得所有点信息
+      this.$http
+        .get("/point/findAll", {
+          headers: {
+            token: localStorage.getItem("token"),
+          },
+        })
+        .then((res) => {
+          if (res.data === "token无效") {
+            // 清空本地token
+            localStorage.setItem("token", "");
+            // 强制跳转登录界面
+            this.$router.push("/login");
+            // 弹出提示款
+            this.$message.error("登录过期，请重新登录");
+          } else {
+            //遍历初始化
+            for (let i = 0; i < res.data.length; i++) {
+              markerLayer.add({
+                id: res.data[i].id,
+                styleId: "myStyle1",
+                position: new TMap.LatLng(
+                  res.data[i].latitude,
+                  res.data[i].longitude
+                ),
+                properties: {
+                  type: res.data[i].type,
+                  number: res.data[i].number,
+                  area: res.data[i].area,
+                  abnormalNumber: res.data[i].abnormalNumber,
+                  state: res.data[i].state,
+                  inspectRouteId: res.data[i].inspectRouteId,
+                },
+              });
+              let infoWindow = new TMap.InfoWindow({
+                content: "符合条件的点", //信息窗口内容
+                position: new TMap.LatLng(
+                  res.data[i].latitude,
+                  res.data[i].longitude
+                ), //显示信息窗口的坐标
+                map: map,
+              });
+              infoWindow.close();
+              infoWindows.push(infoWindow);
+            }
+          }
+        });
+      // 根据后端穿过来的数据初始化paths
+      this.$http
+        .get("/route/findAll", {
+          headers: {
+            token: localStorage.getItem("token"),
+          },
+        })
+        .then((res) => {
+          if (res.data === "token无效") {
+            // 清空本地token
+            localStorage.setItem("token", "");
+            // 强制跳转登录界面
+            this.$router.push("/login");
+            // 弹出提示款
+            this.$message.error("登录过期，请重新登录");
+          } else {
+            for (let i = 0; i < res.data.length; i++) {
+              let polyArray = []; // 创建一个用来存放该路线上所有点的数组
+              for (let j = 0; j < markerLayer.geometries.length; j++) {
+                if (
+                  markerLayer.geometries[j].properties.inspectRouteId ===
+                  res.data[i].id
+                ) {
+                  polyArray.push([
+                    markerLayer.geometries[j].position.lat,
+                    markerLayer.geometries[j].position.lng,
+                  ]);
+                }
+              }
+              //转为LatLng数组
+              polyArray = polyArray.map((p) => {
+                return new TMap.LatLng(p[0], p[1]);
+              });
+              // 创建该巡检路线
+              this.paths.push({
+                // 这里使用巡检路线的名字作为唯一标识
+                'id': res.data[i].routeName,
+                'styleId': 'style_'+(i+1).toString(),
+                'paths': polyArray
+              })
+            }
+          }
+        });
+      // 初始化infoWindow
+      let infoWindow = new TMap.InfoWindow({
+        map: map,
+        enableCustom: true,
+        position: new TMap.LatLng(0, 0),
+        offset: { x: 0, y: -32 }, //设置信息窗相对position偏移像素，为了使其显示在Marker的上方
+      });
+      // 初始化pathInfoWindow
+      let pathInfoWindow = new TMap.InfoWindow({
+        map: map,
+        enableCustom: true,
+        position: new TMap.LatLng(0, 0),
+        offset: { x: 0, y: -32 }, //设置信息窗相对position偏移像素，为了使其显示在Marker的上方
+      });
+      infoWindow.close(); //初始关闭信息窗关闭
+      pathInfoWindow.close(); //初始关闭信息窗关闭
+      // 监听marker点击事件
+      markerLayer.on("click", this.pclickHandler);
+      // 监听标注点击事件
+      markerLayer.on("click", function (evt) {
+        //设置infoWindow
+        infoWindow.open(); //打开信息窗
+        infoWindow.setPosition(evt.geometry.position); //设置信息窗位置
+        let content =
+          "<div><span>类型：" +
+          evt.geometry.properties.type +
+          "</span></div>" +
+          "<div><span>编号：" +
+          evt.geometry.properties.number +
+          "</span></div>" +
+          "<div><span>区域：" +
+          evt.geometry.properties.area +
+          "</span></div>" +
+          "<div><span>异常次数：" +
+          evt.geometry.properties.abnormalNumber +
+          "</span></div>" +
+          "<div><span>工作状态：" +
+          (evt.geometry.properties.state ? "异常" : "正常") +
+          "</span></div>";
+        infoWindow.setContent(content); //设置信息窗内容
+      });
+      let _this = this;
+      polylineLayer.on("click", function (res) {
+        var res = res && res.geometry;
+        if (res) {
+          pathInfoWindow.open();
+          pathInfoWindow.setPosition(res.paths[0]);
+          pathInfoWindow.setContent(res.id);
+        }
+      });
+      this.map = map;
+      this.markerLayer = markerLayer;
+      this.polylineLayer = polylineLayer;
+      this.infoWindow = infoWindow;
+      this.pathInfoWindow = pathInfoWindow;
+    },
+  },
+};
+</script>
+
+<style scoped></style>
